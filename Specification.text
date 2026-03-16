@@ -1,0 +1,34 @@
+Clean Slate County Report Card
+
+Problem: California's Clean Slate law is supposed to automatically clear eligible criminal records, but implementation varies wildly by county. We would like to track how certain counties are doing with respect to this problem.
+
+
+Out of Scope
+- Mobile app (web/HTML only)
+- User accounts and authentication
+- Automated data refresh (static CSVs are the data source)
+- Backend server or database
+
+
+Core Features
+
+Metrics tracked at the county level:
+
+Core Performance Metrics
+- Clearance Rate: % of total arrests that have been cleared. The primary headline metric.
+- vs. State Average: How far above/below the state mean a county is. Used for grading.
+- Disposition Gap: Gap between arrests and dispositions (cases without a recorded outcome). High gaps suggest courts aren't completing the paperwork needed to clear records.
+- County Rank: 1–58 ranking among California counties, for both clearance rate and disposition gap.
+
+Trend Metrics
+- Year-over-year change in clearance rate: Is the county improving or stagnating since the law passed?
+- Year-over-year change in disposition gap: Is the backlog shrinking?
+
+Equity Metrics
+- Clearance rate by race: Are records being cleared proportionally for Black, Hispanic, and white residents? A county could have a decent overall clearance rate but still be inequitable.
+
+Volume Metrics
+- Total records cleared: Raw impact number, useful for showing scale.
+- Felony vs. misdemeanor clearance split: Felonies are harder to clear; tracking them separately shows whether counties are doing the harder work.
+
+

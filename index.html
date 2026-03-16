@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clean Slate County Report Card</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/topojson-client@3/dist/topojson-client.min.js"></script>
+  <style>
+    body {
+      font-family: sans-serif;
+      margin: 2rem;
+      color: #222;
+      background: #f9f9f9;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 0.25rem; }
+    p.subtitle { color: #555; margin-bottom: 1.5rem; font-size: 0.95rem; }
+    table {
+      border-collapse: collapse;
+      width: 100%;
+      background: white;
+      font-size: 0.85rem;
+    }
+    th {
+      background: #2c3e50;
+      color: white;
+      padding: 0.6rem 0.75rem;
+      text-align: left;
+      white-space: nowrap;
+      cursor: pointer;
+      user-select: none;
+    }
+    th:hover { background: #3d5166; }
+    th.sorted-asc::after  { content: ' ▲'; }
+    th.sorted-desc::after { content: ' ▼'; }
+    .rate-cell { font-weight: 600; }
+    td {
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid #e0e0e0;
+      white-space: nowrap;
+    }
+    tr:hover { background: #f0f4f8; }
+    .num { text-align: right; }
+  </style>
+</head>
+<body>
+  <h1>Clean Slate County Report Card</h1>
+  <p class="subtitle">California county-level statistics on automatic record clearance under the Clean Slate law. Click any column header to sort.</p>
+  <table>
+    <thead>
+      <tr>
+        <th data-col="5" class="num sorted-asc">Rank</th>
+        <th data-col="0">County</th>
+        <th data-col="1" class="num">PC 851.93 Relief<br>(Arrests Cleared)</th>
+        <th data-col="2" class="num">PC 1203.425 Relief<br>(Convictions Cleared)</th>
+        <th data-col="3" class="num">Clearance Rate (%)</th>
+        <th data-col="4" class="num">% Arrests Without Disposition</th>
+      </tr>
+    </thead>
+    <tbody id="tbody"></tbody>
+    <tfoot id="tfoot"></tfoot>
+  </table>
+
+  <div style="margin-top: 3rem;">
+    <h2 style="font-size: 1.2rem; margin-bottom: 0.5rem;">County Map</h2>
+    <label for="mapMetric" style="font-size: 0.9rem; margin-right: 0.5rem;">Metric:</label>
+    <select id="mapMetric" style="font-size: 0.9rem; padding: 0.3rem 0.5rem; margin-bottom: 1rem;">
+      <option value="clearance_rate">Clearance Rate (%)</option>
+      <option value="arrests_cleared">PC 851.93 Relief (Arrests Cleared)</option>
+      <option value="convictions_cleared">PC 1203.425 Relief (Convictions Cleared)</option>
+      <option value="disposition_gap">% Arrests Without Disposition</option>
+    </select>
+    <div style="background: white; padding: 1rem; max-width: 600px; position: relative;">
+      <svg id="caMap" style="width:100%; height:auto;"></svg>
+      <div id="mapTooltip" style="
+        position: fixed; pointer-events: none; display: none;
+        background: rgba(0,0,0,0.78); color: white; padding: 0.4rem 0.7rem;
+        border-radius: 4px; font-size: 0.82rem; line-height: 1.5;
+      "></div>
+    </div>
+    <div id="mapLegend" style="display:flex; align-items:center; gap:0.5rem; margin-top:0.5rem; font-size:0.8rem; max-width:600px;"></div>
+  </div>
+
+  <div style="margin-top: 3rem;">
+    <h2 style="font-size: 1.2rem; margin-bottom: 0.5rem;">County Trends (2022–2024)</h2>
+    <label for="countySelect" style="font-size: 0.9rem; margin-right: 0.5rem;">County:</label>
+    <select id="countySelect" style="font-size: 0.9rem; padding: 0.3rem 0.5rem; margin-bottom: 1rem;"></select>
+    <div style="background: white; padding: 1rem; max-width: 860px;">
+      <canvas id="trendChart"></canvas>
+    </div>
+  </div>
+
+  <script>
+    const raw = [
+      ["ALAMEDA",356875,107294,15.17,17.2],
+      ["ALPINE",502,816,29.64,32.0],
+      ["AMADOR",8236,2945,20.56,20.8],
+      ["BUTTE",138276,24943,40.26,41.0],
+      ["CALAVERAS",10879,3334,20.62,24.7],
+      ["COLUSA",7250,2550,18.96,26.5],
+      ["CONTRA COSTA",365490,60131,30.75,42.3],
+      ["DEL NORTE",10367,3571,16.81,17.1],
+      ["EL DORADO",39475,17226,21.47,24.4],
+      ["FRESNO",304054,56633,17.28,31.7],
+      ["GLENN",9396,3823,19.66,29.3],
+      ["HUMBOLDT",66247,18781,23.03,26.6],
+      ["IMPERIAL",84908,24394,32.62,41.8],
+      ["INYO",8576,3658,25.65,36.8],
+      ["KERN",273777,105171,20.87,19.6],
+      ["KINGS",83421,10837,25.67,40.6],
+      ["LAKE",28602,7885,22.97,24.9],
+      ["LASSEN",12989,3498,31.62,35.8],
+      ["LOS ANGELES",2647148,1480264,23.98,21.7],
+      ["MADERA",62554,35396,40.34,31.8],
+      ["MARIN",64031,15891,20.38,30.6],
+      ["MARIPOSA",4654,2535,24.54,25.9],
+      ["MENDOCINO",65493,13050,35.6,40.8],
+      ["MERCED",113535,16281,21.49,44.4],
+      ["MODOC",5403,1293,32.05,36.7],
+      ["MONO",5447,3339,40.63,32.1],
+      ["MONTEREY",218024,46207,33.57,34.7],
+      ["NAPA",38629,17355,27.57,28.6],
+      ["NEVADA",29398,10896,26.97,34.3],
+      ["ORANGE",1071319,225096,28.72,32.8],
+      ["PLACER",83675,27560,26.82,29.1],
+      ["PLUMAS",6614,3244,21.65,30.9],
+      ["RIVERSIDE",775550,153470,37.41,40.4],
+      ["SACRAMENTO",530115,104059,28.03,32.1],
+      ["SAN BENITO",17214,6375,26.83,31.3],
+      ["SAN BERNARDINO",878149,151817,29.83,36.2],
+      ["SAN DIEGO",1398034,216373,31.35,45.0],
+      ["SAN FRANCISCO",211450,30738,12.94,24.8],
+      ["SAN JOAQUIN",246214,52517,23.24,26.0],
+      ["SAN LUIS OBISPO",116665,42137,31.61,29.4],
+      ["SAN MATEO",164932,62201,24.28,26.6],
+      ["SANTA BARBARA",202061,68348,24.97,31.8],
+      ["SANTA CLARA",545837,172829,26.06,21.5],
+      ["SANTA CRUZ",184033,31762,33.43,45.4],
+      ["SHASTA",87248,21191,23.88,41.8],
+      ["SIERRA",847,558,14.8,19.1],
+      ["SISKIYOU",19101,4583,22.81,39.1],
+      ["SOLANO",139903,21282,21.92,20.1],
+      ["SONOMA",186089,50059,27.37,25.7],
+      ["STANISLAUS",170678,48231,19.94,26.2],
+      ["SUTTER",43927,10162,29.53,50.6],
+      ["TEHAMA",23834,5368,21.36,35.9],
+      ["TRINITY",5280,2111,22.95,24.8],
+      ["TULARE",339386,52284,40.12,51.5],
+      ["TUOLUMNE",16445,6184,19.55,26.0],
+      ["VENTURA",334469,70933,27.21,35.9],
+      ["YOLO",99197,17841,31.77,38.7],
+      ["YUBA",35737,8771,22.82,40.6],
+    ];
+
+    // State average clearance rate = 26.10% (derived from clearance_rate - clearance_vs_avg)
+    const STATE_AVG = 26.10;
+    const totalArrCleared  = raw.reduce((s, r) => s + r[1], 0);
+    const totalConvCleared = raw.reduce((s, r) => s + r[2], 0);
+    const avgDisp = raw.reduce((s, r) => s + r[4], 0) / raw.length;
+
+    // Assign rank by clearance rate (1 = highest)
+    const ranked = [...raw].sort((a, b) => b[3] - a[3]);
+    ranked.forEach((row, i) => row[5] = i + 1);
+
+    // Max deviation for color scaling
+    const maxDev = Math.max(...raw.map(r => Math.abs(r[3] - STATE_AVG)));
+
+    function rateColor(rate) {
+      const dev = rate - STATE_AVG;
+      const t = Math.min(Math.abs(dev) / maxDev, 1);
+      // green (120) if above avg, red (0) if below; lightness 92% at 0 → 75% at max
+      const hue = dev >= 0 ? 120 : 0;
+      const lightness = 92 - t * 17;
+      const saturation = 40 + t * 40;
+      return `hsl(${hue}, ${saturation}%, ${lightness}%)`;
+    }
+
+    let sortCol = 5;
+    let sortAsc = true;
+
+    function renderTable() {
+      const sorted = [...raw].sort((a, b) => {
+        const av = a[sortCol], bv = b[sortCol];
+        if (typeof av === 'string') return sortAsc ? av.localeCompare(bv) : bv.localeCompare(av);
+        return sortAsc ? av - bv : bv - av;
+      });
+
+      const tbody = document.getElementById('tbody');
+      tbody.innerHTML = '';
+      for (const row of sorted) {
+        const tr = document.createElement('tr');
+        // Rank
+        const tdRank = document.createElement('td');
+        tdRank.className = 'num';
+        tdRank.textContent = '#' + row[5];
+        tr.appendChild(tdRank);
+        // County
+        const tdCounty = document.createElement('td');
+        tdCounty.textContent = row[0];
+        tr.appendChild(tdCounty);
+        // Arrests cleared
+        const tdArr = document.createElement('td');
+        tdArr.className = 'num';
+        tdArr.textContent = row[1].toLocaleString();
+        tr.appendChild(tdArr);
+        // Convictions cleared
+        const tdConv = document.createElement('td');
+        tdConv.className = 'num';
+        tdConv.textContent = row[2].toLocaleString();
+        tr.appendChild(tdConv);
+        // Clearance rate (color coded)
+        const tdRate = document.createElement('td');
+        tdRate.className = 'num rate-cell';
+        tdRate.style.backgroundColor = rateColor(row[3]);
+        tdRate.textContent = row[3].toFixed(2) + '%';
+        tr.appendChild(tdRate);
+        // Disposition gap
+        const tdDisp = document.createElement('td');
+        tdDisp.className = 'num';
+        tdDisp.textContent = row[4].toFixed(2) + '%';
+        tr.appendChild(tdDisp);
+
+        tbody.appendChild(tr);
+      }
+
+      document.querySelectorAll('th').forEach(th => {
+        th.classList.remove('sorted-asc', 'sorted-desc');
+      });
+      const activeTh = document.querySelector(`th[data-col="${sortCol}"]`);
+      if (activeTh) activeTh.classList.add(sortAsc ? 'sorted-asc' : 'sorted-desc');
+    }
+
+    function renderFooter() {
+      const tfoot = document.getElementById('tfoot');
+      tfoot.innerHTML = '';
+      const tr = document.createElement('tr');
+      tr.style.fontWeight = '600';
+      tr.style.borderTop = '2px solid #2c3e50';
+      tr.style.background = '#f0f4f8';
+
+      const cells = [
+        { text: '—', cls: 'num' },
+        { text: 'California (Average)' },
+        { text: totalArrCleared.toLocaleString(), cls: 'num' },
+        { text: totalConvCleared.toLocaleString(), cls: 'num' },
+        { text: STATE_AVG.toFixed(2) + '%', cls: 'num rate-cell', bg: rateColor(STATE_AVG) },
+        { text: avgDisp.toFixed(2) + '%', cls: 'num' },
+      ];
+
+      cells.forEach(({ text, cls, bg }) => {
+        const td = document.createElement('td');
+        td.textContent = text;
+        if (cls) td.className = cls;
+        if (bg) td.style.backgroundColor = bg;
+        tr.appendChild(td);
+      });
+
+      tfoot.appendChild(tr);
+    }
+
+    document.querySelectorAll('th').forEach(th => {
+      th.addEventListener('click', () => {
+        const col = parseInt(th.dataset.col);
+        if (col === sortCol) {
+          sortAsc = !sortAsc;
+        } else {
+          sortCol = col;
+          sortAsc = col === 0 || col === 5;
+        }
+        renderTable();
+      });
+    });
+
+    renderTable();
+    renderFooter();
+
+    // --- Trend chart ---
+    const trendCsv = `county,year,arrests_cleared,convictions_cleared,disposition_gap
+ALAMEDA,2022,241030,87162,17.2
+ALPINE,2022,364,671,31.9
+AMADOR,2022,4555,2202,22.3
+BUTTE,2022,97597,16770,41.0
+CALAVERAS,2022,7322,2733,23.8
+COLUSA,2022,4789,1925,27.5
+CONTRA COSTA,2022,209281,31836,42.5
+DEL NORTE,2022,7223,3070,16.8
+EL DORADO,2022,23417,13416,25.8
+FRESNO,2022,204563,43604,31.5
+GLENN,2022,5593,3130,29.9
+HUMBOLDT,2022,45964,15513,28.8
+IMPERIAL,2022,59438,20798,42.4
+INYO,2022,5510,2745,35.6
+KERN,2022,181334,81012,19.6
+KINGS,2022,55698,8195,41.1
+LAKE,2022,19602,5022,26.1
+LASSEN,2022,8377,2182,35.4
+LOS ANGELES,2022,1696845,964997,23.5
+MADERA,2022,39270,28285,32.4
+MARIN,2022,41261,11503,29.7
+MARIPOSA,2022,2880,1966,23.3
+MENDOCINO,2022,44118,9196,41.5
+MERCED,2022,73194,11282,45.6
+MODOC,2022,3629,737,35.8
+MONO,2022,3245,2718,32.6
+MONTEREY,2022,139217,37456,35.6
+NAPA,2022,26347,13530,29.7
+NEVADA,2022,20547,7882,34.9
+ORANGE,2022,730853,179575,33.0
+PLACER,2022,50788,20545,29.4
+PLUMAS,2022,4317,2690,30.7
+RIVERSIDE,2022,439871,129007,41.1
+SACRAMENTO,2022,321282,78124,32.5
+SAN BENITO,2022,11954,4881,31.4
+SAN BERNARDINO,2022,556754,123929,36.9
+SAN DIEGO,2022,932627,165480,45.6
+SAN FRANCISCO,2022,144783,21952,24.4
+SAN JOAQUIN,2022,176626,39766,25.9
+SAN LUIS OBISPO,2022,84774,25940,29.7
+SAN MATEO,2022,108036,36408,26.2
+SANTA BARBARA,2022,143274,48469,31.6
+SANTA CLARA,2022,409216,132828,21.7
+SANTA CRUZ,2022,127792,23561,46.2
+SHASTA,2022,60677,12649,42.0
+SIERRA,2022,559,369,18.3
+SISKIYOU,2022,11456,3616,37.5
+SOLANO,2022,89679,16938,19.6
+SONOMA,2022,132717,37742,25.1
+STANISLAUS,2022,108842,31038,26.5
+SUTTER,2022,26288,6759,50.1
+TEHAMA,2022,16041,3590,35.9
+TRINITY,2022,3316,1656,24.2
+TULARE,2022,204298,37319,51.7
+TUOLUMNE,2022,10370,4629,25.9
+VENTURA,2022,213434,43597,37.8
+YOLO,2022,63646,12806,39.3
+YUBA,2022,23839,6738,41.6
+ALAMEDA,2023,47338,2623,18.2
+ALPINE,2023,57,21,34.2
+AMADOR,2023,659,58,23.4
+BUTTE,2023,5790,716,41.9
+CALAVERAS,2023,663,115,24.7
+COLUSA,2023,505,111,27.5
+CONTRA COSTA,2023,8580,810,43.2
+DEL NORTE,2023,309,77,17.3
+EL DORADO,2023,2801,722,26.1
+FRESNO,2023,10495,2350,32.0
+GLENN,2023,837,146,30.1
+HUMBOLDT,2023,2711,593,28.3
+IMPERIAL,2023,1601,482,42.9
+INYO,2023,319,102,37.0
+KERN,2023,12021,4085,19.8
+KINGS,2023,2467,486,42.0
+LAKE,2023,1297,195,25.7
+LASSEN,2023,474,66,36.3
+LOS ANGELES,2023,147082,89755,22.3
+MADERA,2023,2703,1238,32.4
+MARIN,2023,5462,458,30.4
+MARIPOSA,2023,552,120,24.8
+MENDOCINO,2023,2850,314,41.5
+MERCED,2023,4027,578,45.8
+MODOC,2023,259,39,36.6
+MONO,2023,449,106,32.8
+MONTEREY,2023,6441,1998,35.5
+NAPA,2023,1195,536,30.3
+NEVADA,2023,1337,536,39.6
+ORANGE,2023,45632,2626,33.3
+PLACER,2023,5174,1073,29.4
+PLUMAS,2023,394,85,33.9
+RIVERSIDE,2023,21184,3923,40.7
+SACRAMENTO,2023,17177,4376,33.7
+SAN BENITO,2023,1076,197,32.7
+SAN BERNARDINO,2023,27877,7096,36.8
+SAN DIEGO,2023,37123,6233,45.7
+SAN FRANCISCO,2023,13610,250,26.1
+SAN JOAQUIN,2023,10897,815,26.4
+SAN LUIS OBISPO,2023,6460,538,30.3
+SAN MATEO,2023,9482,1232,26.9
+SANTA BARBARA,2023,7790,1352,31.9
+SANTA CLARA,2023,26351,2295,22.5
+SANTA CRUZ,2023,5778,899,45.9
+SHASTA,2023,5045,4282,42.6
+SIERRA,2023,72,31,19.1
+SISKIYOU,2023,951,122,39.0
+SOLANO,2023,10583,285,20.5
+SONOMA,2023,16348,1211,26.0
+STANISLAUS,2023,10276,792,27.0
+SUTTER,2023,4386,1570,50.5
+TEHAMA,2023,1346,252,36.3
+TRINITY,2023,502,99,25.0
+TULARE,2023,11660,1738,51.7
+TUOLUMNE,2023,824,225,26.3
+VENTURA,2023,15771,837,38.7
+YOLO,2023,3269,460,39.5
+YUBA,2023,1150,290,41.6
+ALAMEDA,2024,68507,17509,17.2
+ALPINE,2024,81,124,32.0
+AMADOR,2024,3022,685,20.8
+BUTTE,2024,34889,7457,41.0
+CALAVERAS,2024,2894,486,24.7
+COLUSA,2024,1956,514,26.5
+CONTRA COSTA,2024,147629,27485,42.3
+DEL NORTE,2024,2835,424,17.1
+EL DORADO,2024,13257,3088,24.4
+FRESNO,2024,88996,10679,31.7
+GLENN,2024,2966,547,29.3
+HUMBOLDT,2024,17572,2675,26.6
+IMPERIAL,2024,23869,3114,41.8
+INYO,2024,2747,811,36.8
+KERN,2024,80422,20074,19.6
+KINGS,2024,25256,2156,40.6
+LAKE,2024,7703,2668,24.9
+LASSEN,2024,4138,1250,35.8
+LOS ANGELES,2024,803221,425512,21.7
+MADERA,2024,20581,5873,31.8
+MARIN,2024,17308,3930,30.6
+MARIPOSA,2024,1222,449,25.9
+MENDOCINO,2024,18525,3540,40.8
+MERCED,2024,36314,4421,44.4
+MODOC,2024,1515,517,36.7
+MONO,2024,1753,515,32.1
+MONTEREY,2024,72366,6753,34.7
+NAPA,2024,11087,3289,28.6
+NEVADA,2024,7514,2478,34.3
+ORANGE,2024,294834,42895,32.8
+PLACER,2024,27713,5942,29.1
+PLUMAS,2024,1903,469,30.9
+RIVERSIDE,2024,314495,20540,40.4
+SACRAMENTO,2024,191656,21559,32.1
+SAN BENITO,2024,4184,1297,31.3
+SAN BERNARDINO,2024,293518,20792,36.2
+SAN DIEGO,2024,428284,44660,45.0
+SAN FRANCISCO,2024,53057,8536,24.8
+SAN JOAQUIN,2024,58691,11936,26.0
+SAN LUIS OBISPO,2024,25431,15659,29.4
+SAN MATEO,2024,47414,24561,26.6
+SANTA BARBARA,2024,50997,18527,31.8
+SANTA CLARA,2024,110270,37706,21.5
+SANTA CRUZ,2024,50463,7302,45.4
+SHASTA,2024,21526,4260,41.8
+SIERRA,2024,216,158,19.1
+SISKIYOU,2024,6694,845,39.1
+SOLANO,2024,39641,4059,20.1
+SONOMA,2024,37024,11106,25.7
+STANISLAUS,2024,51560,16401,26.2
+SUTTER,2024,13253,1833,50.6
+TEHAMA,2024,6447,1526,35.9
+TRINITY,2024,1462,356,24.8
+TULARE,2024,123428,13227,51.5
+TUOLUMNE,2024,5251,1330,26.0
+VENTURA,2024,105264,26499,35.9
+YOLO,2024,32282,4575,38.7
+YUBA,2024,10748,1743,40.6`;
+
+    // Parse trend CSV into { COUNTY: { 2022: {...}, 2023: {...}, 2024: {...} } }
+    const trend = {};
+    trendCsv.trim().split('\n').slice(1).forEach(line => {
+      const [county, year, arr, conv, disp] = line.split(',');
+      if (!trend[county]) trend[county] = {};
+      trend[county][year] = {
+        arrests_cleared: +arr,
+        convictions_cleared: +conv,
+        disposition_gap: +disp
+      };
+    });
+
+    // Build "California (Overall)" by summing all counties per year
+    const years = ['2022', '2023', '2024'];
+    trend['California (Overall)'] = {};
+    years.forEach(y => {
+      trend['California (Overall)'][y] = { arrests_cleared: 0, convictions_cleared: 0, disposition_gap: 0 };
+      const counties = Object.keys(trend).filter(c => c !== 'California (Overall)');
+      counties.forEach(c => {
+        trend['California (Overall)'][y].arrests_cleared    += trend[c][y].arrests_cleared;
+        trend['California (Overall)'][y].convictions_cleared += trend[c][y].convictions_cleared;
+      });
+      // disposition_gap: average across counties
+      trend['California (Overall)'][y].disposition_gap =
+        counties.reduce((s, c) => s + trend[c][y].disposition_gap, 0) / counties.length;
+    });
+
+    // Populate dropdown
+    const select = document.getElementById('countySelect');
+    ['California (Overall)', ...Object.keys(trend).filter(c => c !== 'California (Overall)').sort()]
+      .forEach(name => {
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        select.appendChild(opt);
+      });
+
+    // Draw chart
+    const ctx = document.getElementById('trendChart').getContext('2d');
+    const chart = new Chart(ctx, {
+      type: 'line',
+      data: buildChartData('California (Overall)'),
+      options: {
+        responsive: true,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { position: 'top' },
+          title: { display: true, text: 'California (Overall)' }
+        },
+        scales: {
+          y: {
+            type: 'linear',
+            position: 'left',
+            title: { display: true, text: 'Records Cleared' },
+            ticks: { callback: v => v.toLocaleString() }
+          },
+          y2: {
+            type: 'linear',
+            position: 'right',
+            title: { display: true, text: '% Arrests Without Disposition' },
+            grid: { drawOnChartArea: false },
+            min: 0,
+            max: 60
+          }
+        }
+      }
+    });
+
+    function buildChartData(county) {
+      const d = trend[county];
+      return {
+        labels: years,
+        datasets: [
+          {
+            label: 'PC 851.93 Relief (Arrests Cleared)',
+            data: years.map(y => d[y].arrests_cleared),
+            borderColor: '#2980b9',
+            backgroundColor: 'rgba(41,128,185,0.1)',
+            yAxisID: 'y',
+            tension: 0.3,
+            pointRadius: 5
+          },
+          {
+            label: 'PC 1203.425 Relief (Convictions Cleared)',
+            data: years.map(y => d[y].convictions_cleared),
+            borderColor: '#27ae60',
+            backgroundColor: 'rgba(39,174,96,0.1)',
+            yAxisID: 'y',
+            tension: 0.3,
+            pointRadius: 5
+          },
+          {
+            label: '% Arrests Without Disposition',
+            data: years.map(y => d[y].disposition_gap),
+            borderColor: '#e74c3c',
+            backgroundColor: 'rgba(231,76,60,0.1)',
+            yAxisID: 'y2',
+            tension: 0.3,
+            pointRadius: 5,
+            borderDash: [5, 4]
+          }
+        ]
+      };
+    }
+
+    select.addEventListener('change', () => {
+      const county = select.value;
+      chart.data = buildChartData(county);
+      chart.options.plugins.title.text = county;
+      chart.update();
+    });
+
+    // --- Choropleth Map ---
+    // FIPS code → county name (uppercase, matching our data keys)
+    const fipsToCounty = {
+      '06001':'ALAMEDA','06003':'ALPINE','06005':'AMADOR','06007':'BUTTE',
+      '06009':'CALAVERAS','06011':'COLUSA','06013':'CONTRA COSTA','06015':'DEL NORTE',
+      '06017':'EL DORADO','06019':'FRESNO','06021':'GLENN','06023':'HUMBOLDT',
+      '06025':'IMPERIAL','06027':'INYO','06029':'KERN','06031':'KINGS',
+      '06033':'LAKE','06035':'LASSEN','06037':'LOS ANGELES','06039':'MADERA',
+      '06041':'MARIN','06043':'MARIPOSA','06045':'MENDOCINO','06047':'MERCED',
+      '06049':'MODOC','06051':'MONO','06053':'MONTEREY','06055':'NAPA',
+      '06057':'NEVADA','06059':'ORANGE','06061':'PLACER','06063':'PLUMAS',
+      '06065':'RIVERSIDE','06067':'SACRAMENTO','06069':'SAN BENITO',
+      '06071':'SAN BERNARDINO','06073':'SAN DIEGO','06075':'SAN FRANCISCO',
+      '06077':'SAN JOAQUIN','06079':'SAN LUIS OBISPO','06081':'SAN MATEO',
+      '06083':'SANTA BARBARA','06085':'SANTA CLARA','06087':'SANTA CRUZ',
+      '06089':'SHASTA','06091':'SIERRA','06093':'SISKIYOU','06095':'SOLANO',
+      '06097':'SONOMA','06099':'STANISLAUS','06101':'SUTTER','06103':'TEHAMA',
+      '06105':'TRINITY','06107':'TULARE','06109':'TUOLUMNE','06111':'VENTURA',
+      '06113':'YOLO','06115':'YUBA'
+    };
+
+    // Build county data lookup from existing `raw` array
+    // raw columns: [name, arrests_cleared, convictions_cleared, clearance_rate, disposition_gap, rank]
+    const countyData = {};
+    raw.forEach(r => {
+      countyData[r[0]] = {
+        arrests_cleared: r[1],
+        convictions_cleared: r[2],
+        clearance_rate: r[3],
+        disposition_gap: r[4]
+      };
+    });
+
+    const metricLabels = {
+      clearance_rate: 'Clearance Rate (%)',
+      arrests_cleared: 'PC 851.93 Relief (Arrests Cleared)',
+      convictions_cleared: 'PC 1203.425 Relief (Convictions Cleared)',
+      disposition_gap: '% Arrests Without Disposition'
+    };
+
+    const metricFormats = {
+      clearance_rate: v => v.toFixed(2) + '%',
+      arrests_cleared: v => v.toLocaleString(),
+      convictions_cleared: v => v.toLocaleString(),
+      disposition_gap: v => v.toFixed(2) + '%'
+    };
+
+    const svgEl = d3.select('#caMap');
+    const tooltip = document.getElementById('mapTooltip');
+    const legendEl = document.getElementById('mapLegend');
+    const width = 500, height = 600;
+    svgEl.attr('viewBox', `0 0 ${width} ${height}`);
+
+    let colorScale, currentMetric = 'clearance_rate';
+
+    function buildColorScale(metric) {
+      const vals = Object.values(countyData).map(d => d[metric]);
+      const [lo, hi] = [Math.min(...vals), Math.max(...vals)];
+      // Red (low) → Yellow → Green (high) for clearance_rate
+      // Green (low) → Yellow → Red (high) for disposition_gap (high = bad)
+      const bad = metric === 'disposition_gap';
+      return d3.scaleSequential()
+        .domain(bad ? [hi, lo] : [lo, hi])
+        .interpolator(d3.interpolateRdYlGn);
+    }
+
+    function renderLegend(metric) {
+      legendEl.innerHTML = '';
+      const vals = Object.values(countyData).map(d => d[metric]);
+      const lo = Math.min(...vals), hi = Math.max(...vals);
+      const fmt = metricFormats[metric];
+
+      const gradId = 'mapGrad';
+      const gradHtml = `
+        <svg width="160" height="14" style="border-radius:3px">
+          <defs>
+            <linearGradient id="${gradId}" x1="0%" x2="100%">
+              ${d3.range(0,1.01,0.1).map(t => {
+                const bad = metric === 'disposition_gap';
+                const c = d3.interpolateRdYlGn(bad ? 1-t : t);
+                return `<stop offset="${(t*100).toFixed(0)}%" stop-color="${c}"/>`;
+              }).join('')}
+            </linearGradient>
+          </defs>
+          <rect width="160" height="14" fill="url(#${gradId})"/>
+        </svg>`;
+      legendEl.innerHTML = `<span>${fmt(lo)}</span>${gradHtml}<span>${fmt(hi)}</span>`;
+    }
+
+    function updateMap(metric) {
+      colorScale = buildColorScale(metric);
+      svgEl.selectAll('path')
+        .attr('fill', d => {
+          const name = fipsToCounty[d.id];
+          if (!name || !countyData[name]) return '#ccc';
+          return colorScale(countyData[name][metric]);
+        });
+      renderLegend(metric);
+    }
+
+    fetch('https://cdn.jsdelivr.net/npm/us-atlas@3/counties-10m.json')
+      .then(r => r.json())
+      .then(us => {
+        const caCounties = topojson.feature(us, us.objects.counties);
+        caCounties.features = caCounties.features.filter(d => d.id.startsWith('06'));
+
+        const projection = d3.geoMercator().fitSize([width, height], caCounties);
+        const path = d3.geoPath().projection(projection);
+
+        colorScale = buildColorScale(currentMetric);
+
+        svgEl.selectAll('path')
+          .data(caCounties.features)
+          .join('path')
+          .attr('d', path)
+          .attr('stroke', '#fff')
+          .attr('stroke-width', 0.5)
+          .attr('fill', d => {
+            const name = fipsToCounty[d.id];
+            if (!name || !countyData[name]) return '#ccc';
+            return colorScale(countyData[name][currentMetric]);
+          })
+          .on('mousemove', (event, d) => {
+            const name = fipsToCounty[d.id];
+            const data = name && countyData[name];
+            if (!data) return;
+            const fmt = metricFormats[currentMetric];
+            tooltip.style.display = 'block';
+            tooltip.style.left = (event.clientX + 12) + 'px';
+            tooltip.style.top  = (event.clientY - 28) + 'px';
+            tooltip.innerHTML = `<strong>${name}</strong><br>${metricLabels[currentMetric]}: ${fmt(data[currentMetric])}`;
+          })
+          .on('mouseleave', () => { tooltip.style.display = 'none'; });
+
+        renderLegend(currentMetric);
+      });
+
+    document.getElementById('mapMetric').addEventListener('change', e => {
+      currentMetric = e.target.value;
+      updateMap(currentMetric);
+    });
+  </script>
+</body>
+</html>

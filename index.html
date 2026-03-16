@@ -52,6 +52,7 @@
       <tr>
         <th data-col="5" class="num sorted-asc">Rank</th>
         <th data-col="0">County</th>
+        <th title="🔴 Disposition gap > 25% | 🟡 Racial disparity (group share &gt;1.5× state avg)">Flags</th>
         <th data-col="1" class="num">PC 851.93 Relief<br>(Arrests Cleared)</th>
         <th data-col="2" class="num">PC 1203.425 Relief<br>(Convictions Cleared)</th>
         <th data-col="3" class="num">Clearance Rate (%)</th>
@@ -153,6 +154,85 @@
       ["YUBA",35737,8771,22.82,40.6],
     ];
 
+    // Racial breakdown of arrests per county (Black, Hispanic, White, Other)
+    const raceData = {
+      'ALAMEDA':        [1303478,556091,978947,221620],
+      'ALPINE':         [55,207,3508,677],
+      'AMADOR':         [1144,4832,46092,2305],
+      'BUTTE':          [20706,44199,323235,17251],
+      'CALAVERAS':      [907,5288,60351,2378],
+      'COLUSA':         [1543,19790,28159,2198],
+      'CONTRA COSTA':   [367198,260300,679243,77499],
+      'DEL NORTE':      [1033,4528,66106,11263],
+      'EL DORADO':      [5427,23897,228068,6661],
+      'FRESNO':         [266213,1173811,556829,90330],
+      'GLENN':          [1109,19945,42784,3402],
+      'HUMBOLDT':       [10188,17593,305032,36327],
+      'IMPERIAL':       [13909,240014,71267,9881],
+      'INYO':           [444,6156,29430,11670],
+      'KERN':           [227462,754635,772052,61484],
+      'KINGS':          [35424,202784,115256,13677],
+      'LAKE':           [7084,19545,122016,10180],
+      'LASSEN':         [1598,4013,41549,4981],
+      'LOS ANGELES':    [4265593,7866663,4284585,794183],
+      'MADERA':         [14079,146671,75918,6132],
+      'MARIN':          [43914,63813,268656,15694],
+      'MARIPOSA':       [310,2519,24470,1995],
+      'MENDOCINO':      [4775,34010,160267,21557],
+      'MERCED':         [61498,309668,209747,23103],
+      'MODOC':          [184,2307,15827,2572],
+      'MONO':           [264,3723,15558,2079],
+      'MONTEREY':       [63311,439462,256350,27925],
+      'NAPA':           [10519,60859,125389,6305],
+      'NEVADA':         [2306,8783,135413,2883],
+      'ORANGE':         [213933,1735243,2273145,291085],
+      'PLACER':         [18598,49479,330401,16234],
+      'PLUMAS':         [1301,2264,39024,2953],
+      'RIVERSIDE':      [311624,1039288,1055969,76708],
+      'SACRAMENTO':     [623320,380520,1112553,146358],
+      'SAN BENITO':     [1036,58713,26330,1843],
+      'SAN BERNARDINO': [586732,1423408,1329410,113120],
+      'SAN DIEGO':      [857903,1537802,2474789,279494],
+      'SAN FRANCISCO':  [723679,31047,890001,227458],
+      'SAN JOAQUIN':    [226843,454757,528001,75712],
+      'SAN LUIS OBISPO':[20121,107034,361474,13731],
+      'SAN MATEO':      [152105,283034,385327,114946],
+      'SANTA BARBARA':  [55420,405853,577476,44295],
+      'SANTA CLARA':    [297604,1198341,1001354,260448],
+      'SANTA CRUZ':     [23418,194870,412097,15188],
+      'SHASTA':         [16196,22823,388543,26494],
+      'SIERRA':         [56,403,8711,326],
+      'SISKIYOU':       [3568,7453,83842,8965],
+      'SOLANO':         [241085,125055,321600,47756],
+      'SONOMA':         [46261,195180,586334,34895],
+      'STANISLAUS':     [74969,361403,622500,38738],
+      'SUTTER':         [9118,47236,114247,12541],
+      'TEHAMA':         [2026,23264,107811,3623],
+      'TRINITY':        [260,986,29614,1347],
+      'TULARE':         [38148,594930,315154,27964],
+      'TUOLUMNE':       [1160,7028,104456,3098],
+      'VENTURA':        [74712,733317,648134,33933],
+      'YOLO':           [31294,114430,204516,18165],
+      'YUBA':           [11901,28020,147335,7775],
+    };
+
+    // Compute statewide proportions for Black (index 0) and Hispanic (index 1)
+    const stateRaceTotals = Object.values(raceData).reduce(
+      (acc, [b,h,w,o]) => [acc[0]+b, acc[1]+h, acc[2]+w, acc[3]+o], [0,0,0,0]
+    );
+    const stateTotalArrests = stateRaceTotals.reduce((s,v) => s+v, 0);
+    const stateBlackPct  = stateRaceTotals[0] / stateTotalArrests;
+    const stateHispPct   = stateRaceTotals[1] / stateTotalArrests;
+
+    // Flag racial disparity if Black or Hispanic share is >1.5x the statewide share
+    function hasRacialDisparity(county) {
+      const d = raceData[county];
+      if (!d) return false;
+      const total = d[0]+d[1]+d[2]+d[3];
+      if (total === 0) return false;
+      return (d[0]/total > stateBlackPct * 1.5) || (d[1]/total > stateHispPct * 1.5);
+    }
+
     // State average clearance rate = 26.10% (derived from clearance_rate - clearance_vs_avg)
     const STATE_AVG = 26.10;
     const totalArrCleared  = raw.reduce((s, r) => s + r[1], 0);
@@ -199,6 +279,24 @@
         const tdCounty = document.createElement('td');
         tdCounty.textContent = row[0];
         tr.appendChild(tdCounty);
+        // Flags
+        const tdFlags = document.createElement('td');
+        tdFlags.style.whiteSpace = 'nowrap';
+        if (row[4] > 25) {
+          const circle = document.createElement('span');
+          circle.textContent = '●';
+          circle.title = 'Disposition gap > 25%';
+          circle.style.cssText = 'color:#c0392b;font-size:1rem;margin-right:4px;cursor:default';
+          tdFlags.appendChild(circle);
+        }
+        if (hasRacialDisparity(row[0])) {
+          const square = document.createElement('span');
+          square.textContent = '■';
+          square.title = 'Racial disparity: Black or Hispanic arrests exceed 1.5× statewide share';
+          square.style.cssText = 'color:#e0a800;font-size:1rem;cursor:default';
+          tdFlags.appendChild(square);
+        }
+        tr.appendChild(tdFlags);
         // Arrests cleared
         const tdArr = document.createElement('td');
         tdArr.className = 'num';
@@ -242,6 +340,7 @@
       const cells = [
         { text: '—', cls: 'num' },
         { text: 'California (Average)' },
+        { text: '' },
         { text: totalArrCleared.toLocaleString(), cls: 'num' },
         { text: totalConvCleared.toLocaleString(), cls: 'num' },
         { text: STATE_AVG.toFixed(2) + '%', cls: 'num rate-cell', bg: rateColor(STATE_AVG) },
